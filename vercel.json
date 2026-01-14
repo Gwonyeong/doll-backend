@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "name": "doll-backend",
+  "alias": ["doll-backend-dev.vercel.app"],
+  "public": true,
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/src/app.js"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "functions": {
+    "src/app.js": {
+      "maxDuration": 30
+    }
+  }
+}

@@ -1,0 +1,290 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model GameBusiness {
+  id                          Int     @id @default(autoincrement())
+  번호                      Int?
+  개방서비스명          String?
+  개방서비스아이디    String?
+  개방자치단체코드    String?
+  관리번호                String?
+  인허가일자             String?
+  인허가취소일자       String?
+  영업상태구분코드    String?
+  영업상태명             String?
+  상세영업상태코드    String?
+  상세영업상태명       String?
+  폐업일자                String?
+  휴업시작일자          String?
+  휴업종료일자          String?
+  재개업일자             String?
+  소재지전화             String?
+  소재지면적             String?
+  소재지우편번호       String?
+  소재지전체주소       String?
+  도로명전체주소       String?
+  도로명우편번호       String?
+  사업장명                String?
+  최종수정시점          String?
+  데이터갱신구분       String?
+  데이터갱신일자       String?
+  업태구분명             String?
+  좌표정보x               String?
+  좌표정보y               String?
+  문화체육업종명       String?
+  문화사업자구분명    String?
+  총층수                   String?
+  주변환경명             String?
+  제작취급품목내용    String?
+  시설면적                String?
+  지상층수                String?
+  지하층수                String?
+  건물용도명             String?
+  통로너비                String?
+  조명시설조도          String?
+  노래방실수             String?
+  청소년실수             String?
+  비상계단여부          String?
+  비상구여부             String?
+  자동환기여부          String?
+  청소년실여부          String?
+  특수조명여부          String?
+  방음시설여부          String?
+  비디오재생기명       String?
+  조명시설유무          String?
+  음향시설여부          String?
+  편의시설여부          String?
+  소방시설여부          String?
+  총게임기수             String?
+  기존게임업외업종명 String?
+  제공게임물명          String?
+  공연장형태구분명    String?
+  품목명                   String?
+  최초등록시점          String?
+  지역구분명             String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reviews Review[]
+  favorites Favorite[]
+  approvedReports StoreReport[] // 승인된 제보들과 연결
+  adRequests AdRequest[] // 광고 신청들과 연결
+
+  // 성능 최적화를 위한 인덱스
+  @@index([영업상태명, 좌표정보x, 좌표정보y], name: "idx_business_location")
+  @@index([좌표정보x, 좌표정보y], name: "idx_coordinates")
+  @@index([영업상태명], name: "idx_business_status")
+  @@index([사업장명], name: "idx_business_name")
+  @@index([소재지전체주소], name: "idx_business_address")
+
+  // WHERE 절 최적화를 위한 복합 인덱스
+  @@index([영업상태명, 좌표정보x, 좌표정보y, 사업장명, 소재지전체주소], name: "idx_active_stores_with_location")
+  @@map("game_businesses")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  tossId    String?  @unique // 토스 사용자 ID
+  nickname  String?  // 토스 닉네임 (name에서 추출)
+  email     String?  // 토스 이메일
+  avatar    String?  // 토스 프로필 이미지
+
+  // 토스에서 제공하는 추가 사용자 정보
+  name      String?  // 실명 (user_name)
+  phone     String?  // 전화번호 (user_phone)
+  birthday  String?  // 생년월일 (user_birthday)
+  gender    String?  // 성별 (user_gender)
+  ci        String?  // 연결정보 (user_ci) - 개인식별용 고유값
+  di        String?  // 중복가입확인정보 (선택사항)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 기존 Review와 연결
+  reviews   Review[]
+  // 즐겨찾기 관계
+  favorites Favorite[]
+  // 매장 제보 관계
+  storeReports StoreReport[]
+  // 오픈 알림 관계
+  openAlerts OpenAlert[]
+  // 광고 신청 관계
+  adRequests AdRequest[]
+
+  // 성능 최적화를 위한 인덱스
+  @@index([ci], name: "idx_user_ci") // CI로 중복 가입 방지
+  @@map("users")
+}
+
+model Review {
+  id            String   @id @default(cuid())
+  storeId       Int
+  store         GameBusiness @relation(fields: [storeId], references: [id])
+
+  rating        Int      // 1-5 별점
+  content       String   // 리뷰 내용
+  images        String[] // 이미지 URL들
+  tags          String[] // 선택한 태그들
+
+  // v2 인형 자랑하기 관련 컬럼 (기본값 0)
+  dollCount     Int      @default(0)  // 뽑은 인형 수 (0-4개)
+  spentAmount   Int      @default(0)  // 사용한 금액 (원)
+  dollImages    String[] @default([]) // 인형 사진 URL들 (최대 4개)
+
+  // 작성자 정보 (토스 로그인 사용자 또는 익명)
+  userId        String?  // 토스 로그인 사용자일 경우
+  user          User?    @relation(fields: [userId], references: [id])
+  userName      String   @default("익명") // 기존 익명 리뷰 호환성 유지
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // 성능 최적화를 위한 인덱스
+  @@index([storeId, createdAt], name: "idx_reviews_store_created")
+  @@index([storeId], name: "idx_reviews_store")
+  @@index([rating], name: "idx_reviews_rating")
+  @@index([userId], name: "idx_reviews_user")
+  @@map("reviews")
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String   // 즐겨찾기를 추가한 사용자
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storeId   Int      // 즐겨찾기된 매장
+  store     GameBusiness @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 사용자당 매장당 하나의 즐겨찾기만 허용
+  @@unique([userId, storeId], name: "unique_user_store_favorite")
+
+  // 성능 최적화를 위한 인덱스
+  @@index([userId], name: "idx_favorites_user")
+  @@index([storeId], name: "idx_favorites_store")
+  @@index([createdAt], name: "idx_favorites_created")
+  @@map("favorites")
+}
+
+model StoreReport {
+  id          String   @id @default(cuid())
+  userId      String   // 제보한 사용자
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // 제보한 매장 정보
+  storeName   String   // 매장명
+  address     String   // 매장 주소
+  phone       String?  // 매장 전화번호 (선택사항)
+  description String?  // 추가 설명 (선택사항)
+
+  // 위치 정보 (선택사항)
+  latitude    Float?   // 위도
+  longitude   Float?   // 경도
+
+  // 제보 상태 관리
+  status      String   @default("pending") // pending, approved, rejected
+  adminNote   String?  // 관리자 메모
+
+  // 승인된 경우 실제 GameBusiness 와 연결
+  approvedStoreId Int? // 승인 후 실제 매장 ID
+  approvedStore   GameBusiness? @relation(fields: [approvedStoreId], references: [id])
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // 성능 최적화를 위한 인덱스
+  @@index([userId], name: "idx_store_reports_user")
+  @@index([status], name: "idx_store_reports_status")
+  @@index([createdAt], name: "idx_store_reports_created")
+  @@map("store_reports")
+}
+
+model OpenAlert {
+  id        String   @id @default(cuid())
+
+  // 신청한 사용자
+  userId    String   // 신청한 사용자 ID
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // 매장 정보
+  storeName String   // 매장명
+
+  // 신청자 정보
+  name      String   // 성함
+  phone     String   // 연락처
+
+  // 연락 상태
+  contacted Boolean  @default(false) // 연락 완료 여부
+  contactedAt DateTime? // 연락한 날짜
+
+  // 메모
+  adminNote String?  // 관리자 메모
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 성능 최적화를 위한 인덱스
+  @@index([userId], name: "idx_open_alerts_user")
+  @@index([phone], name: "idx_open_alerts_phone")
+  @@index([contacted], name: "idx_open_alerts_contacted")
+  @@index([createdAt], name: "idx_open_alerts_created")
+  @@map("open_alerts")
+}
+
+model AdRequest {
+  id        String   @id @default(cuid())
+
+  // 신청한 사용자
+  userId    String   // 신청한 사용자 ID
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // 광고할 매장 정보
+  storeId   Int?     // 선택한 매장 ID (null이면 주소 찾기로 직접 입력)
+  store     GameBusiness? @relation(fields: [storeId], references: [id])
+
+  // 광고 기간
+  startDate DateTime // 광고 시작일
+  endDate   DateTime // 광고 종료일
+
+  // 매장 사장 정보
+  ownerName String   // 사장님 성함
+  ownerPhone String  // 사장님 전화번호
+
+  // 첨부 파일
+  businessLicenseUrl String? // 사업자등록증 이미지 URL
+  idCardUrl String?  // 신분증 이미지 URL
+
+  // 신청 상태
+  status    String   @default("pending") // pending, approved, rejected
+  adminNote String?  // 관리자 메모
+
+  // 승인 처리 정보
+  approvedAt DateTime? // 승인 처리된 날짜
+  approvedBy String?   // 승인한 관리자
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 성능 최적화를 위한 인덱스
+  @@index([userId], name: "idx_ad_requests_user")
+  @@index([storeId], name: "idx_ad_requests_store")
+  @@index([status], name: "idx_ad_requests_status")
+  @@index([startDate, endDate], name: "idx_ad_requests_period")
+  @@index([createdAt], name: "idx_ad_requests_created")
+  @@map("ad_requests")
+}

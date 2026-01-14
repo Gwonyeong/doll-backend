@@ -1,0 +1,47 @@
+{
+  "name": "doll-backend",
+  "version": "1.0.0",
+  "description": "DollCatcher 백엔드 API 서버",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js",
+    "build": "prisma generate",
+    "postinstall": "prisma generate",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio",
+    "vercel-build": "prisma generate",
+    "deploy:dev": "vercel | tail -1 | xargs -I {} vercel alias {} doll-backend-dev.vercel.app",
+    "deploy:prod": "vercel --prod",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "express",
+    "dollcatcher",
+    "api"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@prisma/client": "^6.17.1",
+    "@supabase/supabase-js": "^2.80.0",
+    "axios": "^1.12.2",
+    "compression": "^1.8.1",
+    "cors": "^2.8.5",
+    "crypto-js": "^4.2.0",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "helmet": "^8.1.0",
+    "https": "^1.0.0",
+    "morgan": "^1.10.1",
+    "multer": "^2.0.2",
+    "prisma": "^6.17.1",
+    "proj4": "^2.19.10",
+    "uuid": "9.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}
