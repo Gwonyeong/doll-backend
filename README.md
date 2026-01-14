@@ -2,6 +2,12 @@
 
 DollCatcher의 Express.js 백엔드 API 서버입니다.
 
+## 🚀 배포 정보
+
+- **Production Branch**: `main` → 자동 배포
+- **Development Branch**: `dev` → 자동 배포
+- **Last Updated**: 2026-01-14
+
 ## 🌐 Vercel 배포
 
 ### 환경 변수 설정
