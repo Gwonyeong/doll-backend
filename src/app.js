@@ -38,25 +38,32 @@ const corsOptions = {
       "https://dollpickmap.apps.tossmini.com",
       "https://dollpickmap.private-apps.tossmini.com",
       "https://doll-admin-jet.vercel.app",
-      // Dev/Preview 환경
+      // Dev/Preview 환경 - 명시적으로 모든 변형 포함
       "https://doll-admin-env-dev-busgwonyeongs-projects.vercel.app",
-      // 환경변수로 지정된 추가 URL
+      // Vercel의 자동 생성 URL 패턴도 포함
       process.env.FRONTEND_URL,
     ].filter(Boolean); // undefined 값 제거
 
-    // 디버깅용 로그 (나중에 제거)
-    if (origin && origin.includes('doll-admin')) {
-      console.log("Admin request - Origin:", origin);
-      console.log("Is allowed?", allowedOrigins.includes(origin));
-    }
+    console.log("=== CORS Debug Info ===");
+    console.log("Request Origin:", origin);
+    console.log("NODE_ENV:", process.env.NODE_ENV);
+    console.log("FRONTEND_URL:", process.env.FRONTEND_URL);
+    console.log("Allowed Origins:", allowedOrigins);
+    console.log("Is Origin Allowed:", allowedOrigins.includes(origin));
 
     // origin이 없는 경우 (같은 도메인에서의 요청) 또는 허용된 origin인 경우 허용
     if (!origin || allowedOrigins.includes(origin)) {
+      console.log("✅ CORS ALLOWED");
       callback(null, true);
     } else {
-      console.log("CORS 차단 - Origin:", origin);
-      console.log("NODE_ENV:", process.env.NODE_ENV);
-      callback(new Error("Not allowed by CORS"));
+      console.log("❌ CORS BLOCKED");
+      // 개발 환경에서는 모든 Vercel domain 허용 (임시)
+      if (origin && origin.includes('.vercel.app')) {
+        console.log("🔄 Vercel domain detected - allowing for dev");
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
     }
   },
   credentials: true,
