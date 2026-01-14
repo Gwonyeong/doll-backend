@@ -3,6 +3,12 @@
   "name": "doll-backend",
   "alias": ["doll-backend-dev.vercel.app"],
   "public": true,
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/src/app.js"
+    }
+  ],
   "headers": [
     {
       "source": "/api/(.*)",
@@ -24,12 +30,6 @@
           "value": "true"
         }
       ]
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "/src/app.js"
     }
   ],
   "env": {
