@@ -8,6 +8,7 @@ const {
   notFoundHandler,
   setupProcessErrorHandlers,
 } = require("./middleware/errorHandler");
+const { initScheduler } = require("./scheduler");
 require("dotenv").config();
 
 const app = express();
@@ -82,6 +83,7 @@ app.use("/api/open-alerts", require("./routes/openAlerts"));
 app.use("/api/ad-requests", require("./routes/adRequests"));
 app.use("/api/geocode", require("./routes/geocode"));
 app.use("/api/upload", require("./routes/upload"));
+app.use("/api/scheduler", require("./routes/scheduler"));
 
 // 헬스 체크 엔드포인트
 app.get("/health", (req, res) => {
@@ -106,6 +108,7 @@ app.get("/", (req, res) => {
       storeReports: "/api/store-reports",
       openAlerts: "/api/open-alerts",
       upload: "/api/upload",
+      scheduler: "/api/scheduler",
       health: "/health",
     },
   });
@@ -123,6 +126,10 @@ setupProcessErrorHandlers();
 // 서버 시작 (로컬 개발용)
 if (process.env.NODE_ENV !== "production") {
   app.listen(PORT, () => {
+    console.log(`🚀 서버가 포트 ${PORT}에서 실행 중입니다.`);
+
+    // 스케줄러 초기화
+    initScheduler();
   });
 }
 

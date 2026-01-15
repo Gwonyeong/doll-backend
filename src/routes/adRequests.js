@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { PrismaClient } = require("../generated/prisma");
 const { authenticateToken } = require("../middleware/auth");
+const { notifyNewAdRequest } = require("../services/eventSlack");
 
 const prisma = new PrismaClient();
 
@@ -98,6 +99,27 @@ router.post("/", async (req, res) => {
           },
         },
       },
+    });
+
+    // 실시간 슬랙 알림 전송 (비동기, 에러가 발생해도 API 응답에는 영향 없음)
+    setImmediate(async () => {
+      try {
+        await notifyNewAdRequest({
+          id: adRequest.id,
+          userId: adRequest.userId,
+          store: adRequest.store,
+          startDate: adRequest.startDate,
+          endDate: adRequest.endDate,
+          ownerName: adRequest.ownerName,
+          ownerPhone: adRequest.ownerPhone,
+          businessLicenseUrl: adRequest.businessLicenseUrl,
+          idCardUrl: adRequest.idCardUrl,
+          createdAt: adRequest.createdAt
+        });
+      } catch (slackError) {
+        console.error('광고 신청 슬랙 알림 전송 실패:', slackError);
+        // 슬랙 알림 실패해도 API는 정상 응답
+      }
     });
 
     res.status(201).json({
