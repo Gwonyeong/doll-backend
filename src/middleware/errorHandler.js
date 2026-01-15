@@ -88,6 +88,19 @@ function globalErrorHandler(err, req, res, next) {
  * @param {Function} next - Express next 함수
  */
 function notFoundHandler(req, res, next) {
+  // HMR(Hot Module Replacement) 관련 요청은 슬랙 알림 제외
+  const isHMRRequest = req.originalUrl.includes('.hot-update.') ||
+                       req.originalUrl.includes('webpack') ||
+                       req.originalUrl.includes('sockjs');
+
+  if (isHMRRequest) {
+    // HMR 요청은 간단한 404 응답만 보내고 에러 로깅 생략
+    return res.status(404).json({
+      success: false,
+      error: "Not Found"
+    });
+  }
+
   const error = new Error(`경로를 찾을 수 없습니다: ${req.originalUrl}`);
   error.status = 404;
   next(error);

@@ -153,21 +153,46 @@ async function sendErrorToSlack(errorInfo) {
  * @returns {Promise<boolean>} 전송 성공 여부
  */
 async function sendExpressErrorToSlack(error, req, additionalInfo = {}) {
-  const errorInfo = {
-    message: error.message,
-    stack: error.stack,
-    method: req.method,
-    url: req.originalUrl || req.url,
-    headers: sanitizeObject(req.headers),
-    body: req.body,
-    query: req.query,
-    userAgent: req ?? req.get("User-Agent"),
-    ip: req.ip || req?.connection?.remoteAddress,
-    timestamp: new Date(),
-    additionalInfo,
-  };
+  try {
+    // 순환 참조를 안전하게 처리하기 위해 필요한 데이터만 추출
+    const safeReq = {
+      method: req.method,
+      url: req.originalUrl || req.url,
+      headers: sanitizeObject(req.headers || {}),
+      body: sanitizeObject(req.body || {}),
+      query: req.query || {},
+      userAgent: req.get ? req.get("User-Agent") : req.headers?.['user-agent'],
+      ip: req.ip || req.connection?.remoteAddress || 'unknown'
+    };
 
-  return sendErrorToSlack(errorInfo);
+    const errorInfo = {
+      message: error.message,
+      stack: error.stack,
+      method: safeReq.method,
+      url: safeReq.url,
+      headers: safeReq.headers,
+      body: safeReq.body,
+      query: safeReq.query,
+      userAgent: safeReq.userAgent,
+      ip: safeReq.ip,
+      timestamp: new Date(),
+      additionalInfo,
+    };
+
+    return sendErrorToSlack(errorInfo);
+  } catch (sanitizeError) {
+    console.error('Error sanitizing request data for Slack:', sanitizeError.message);
+    // 최소한의 안전한 정보만으로 에러 로깅
+    const minimalErrorInfo = {
+      message: error.message,
+      stack: error.stack,
+      url: req.originalUrl || req.url || 'unknown',
+      timestamp: new Date(),
+      sanitizeError: sanitizeError.message
+    };
+
+    return sendErrorToSlack(minimalErrorInfo);
+  }
 }
 
 /**
@@ -226,26 +251,55 @@ function sanitizeObject(obj) {
     return obj;
   }
 
-  const sanitized = { ...obj };
-  const sensitiveKeys = [
-    "password",
-    "token",
-    "authorization",
-    "cookie",
-    "secret",
-    "key",
-    "apikey",
-    "api_key",
-  ];
+  try {
+    // 순환 참조 감지를 위한 Set
+    const seen = new WeakSet();
 
-  Object.keys(sanitized).forEach((key) => {
-    const lowerKey = key.toLowerCase();
-    if (sensitiveKeys.some((sensitive) => lowerKey.includes(sensitive))) {
-      sanitized[key] = "[REDACTED]";
-    }
-  });
+    const sanitizeRecursive = (item) => {
+      if (item === null || typeof item !== "object") {
+        return item;
+      }
 
-  return sanitized;
+      // 순환 참조 체크
+      if (seen.has(item)) {
+        return "[Circular Reference]";
+      }
+
+      seen.add(item);
+
+      if (Array.isArray(item)) {
+        return item.map(sanitizeRecursive);
+      }
+
+      const sanitized = {};
+      const sensitiveKeys = [
+        "password",
+        "token",
+        "authorization",
+        "cookie",
+        "secret",
+        "key",
+        "apikey",
+        "api_key",
+      ];
+
+      Object.keys(item).forEach((key) => {
+        const lowerKey = key.toLowerCase();
+        if (sensitiveKeys.some((sensitive) => lowerKey.includes(sensitive))) {
+          sanitized[key] = "[REDACTED]";
+        } else {
+          sanitized[key] = sanitizeRecursive(item[key]);
+        }
+      });
+
+      return sanitized;
+    };
+
+    return sanitizeRecursive(obj);
+  } catch (error) {
+    console.error('Error in sanitizeObject:', error.message);
+    return { error: "Failed to sanitize object", originalType: typeof obj };
+  }
 }
 
 module.exports = {
