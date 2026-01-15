@@ -44,22 +44,13 @@ const corsOptions = {
       process.env.FRONTEND_URL,
     ].filter(Boolean); // undefined 값 제거
 
-    console.log("=== CORS Debug Info ===");
-    console.log("Request Origin:", origin);
-    console.log("NODE_ENV:", process.env.NODE_ENV);
-    console.log("FRONTEND_URL:", process.env.FRONTEND_URL);
-    console.log("Allowed Origins:", allowedOrigins);
-    console.log("Is Origin Allowed:", allowedOrigins.includes(origin));
 
     // origin이 없는 경우 (같은 도메인에서의 요청) 또는 허용된 origin인 경우 허용
     if (!origin || allowedOrigins.includes(origin)) {
-      console.log("✅ CORS ALLOWED");
       callback(null, true);
     } else {
-      console.log("❌ CORS BLOCKED");
       // 개발 환경에서는 모든 Vercel domain 허용 (임시)
       if (origin && origin.includes('.vercel.app')) {
-        console.log("🔄 Vercel domain detected - allowing for dev");
         callback(null, true);
       } else {
         callback(new Error("Not allowed by CORS"));
@@ -132,9 +123,6 @@ setupProcessErrorHandlers();
 // 서버 시작 (로컬 개발용)
 if (process.env.NODE_ENV !== "production") {
   app.listen(PORT, () => {
-    // console.log(`🚀 DollCatcher API Server가 포트 ${PORT}에서 실행 중입니다.`);
-    // console.log(`📍 Health check: http://localhost:${PORT}/health`);
-    // console.log(`📬 Slack 에러 알림이 활성화되었습니다.`);
   });
 }
 
