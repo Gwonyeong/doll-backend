@@ -32,7 +32,7 @@ const corsOptions = {
       "http://127.0.0.1:3000",
       "http://127.0.0.1:3001",
       "http://127.0.0.1:3002",
-      "http://192.168.200.151:3000",
+      "http://192.168.200.191:3000",
       "http://192.168.50.98:3000",
       "http://192.168.0.16:3000",
       // 프로덕션 환경
@@ -45,13 +45,12 @@ const corsOptions = {
       process.env.FRONTEND_URL,
     ].filter(Boolean); // undefined 값 제거
 
-
     // origin이 없는 경우 (같은 도메인에서의 요청) 또는 허용된 origin인 경우 허용
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       // 개발 환경에서는 모든 Vercel domain 허용 (임시)
-      if (origin && origin.includes('.vercel.app')) {
+      if (origin && origin.includes(".vercel.app")) {
         callback(null, true);
       } else {
         callback(new Error("Not allowed by CORS"));
@@ -84,6 +83,7 @@ app.use("/api/ad-requests", require("./routes/adRequests"));
 app.use("/api/geocode", require("./routes/geocode"));
 app.use("/api/upload", require("./routes/upload"));
 app.use("/api/scheduler", require("./routes/scheduler"));
+app.use("/api/payment", require("./routes/payment"));
 
 // 헬스 체크 엔드포인트
 app.get("/health", (req, res) => {
@@ -109,6 +109,7 @@ app.get("/", (req, res) => {
       openAlerts: "/api/open-alerts",
       upload: "/api/upload",
       scheduler: "/api/scheduler",
+      payment: "/api/payment",
       health: "/health",
     },
   });

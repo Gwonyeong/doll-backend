@@ -83,6 +83,7 @@ model GameBusiness {
   favorites Favorite[]
   approvedReports StoreReport[] // 승인된 제보들과 연결
   adRequests AdRequest[] // 광고 신청들과 연결
+  unlockedReviewsByUsers UserUnlockedStoreReview[] // 리뷰 해금한 사용자들
 
   // 성능 최적화를 위한 인덱스
   @@index([영업상태명, 좌표정보x, 좌표정보y], name: "idx_business_location")
@@ -124,6 +125,10 @@ model User {
   openAlerts OpenAlert[]
   // 광고 신청 관계
   adRequests AdRequest[]
+  // 결제 관계
+  payments Payment[]
+  // 리뷰 해금 관계 (광고 시청 후 매장 리뷰 전체 열람)
+  unlockedStoreReviews UserUnlockedStoreReview[]
 
   // 성능 최적화를 위한 인덱스
   @@index([ci], name: "idx_user_ci") // CI로 중복 가입 방지
@@ -287,4 +292,69 @@ model AdRequest {
   @@index([startDate, endDate], name: "idx_ad_requests_period")
   @@index([createdAt], name: "idx_ad_requests_created")
   @@map("ad_requests")
+}
+
+// 사용자가 광고를 보고 해금한 매장 리뷰 (매장별로 광고 시청 시 전체 후기 열람 가능)
+model UserUnlockedStoreReview {
+  id         String   @id @default(cuid())
+  userId     String   // 광고를 시청한 사용자
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storeId    Int      // 해금한 매장
+  store      GameBusiness @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  unlockedAt DateTime @default(now()) // 해금 시점
+
+  // 사용자당 매장당 하나의 해금만 허용
+  @@unique([userId, storeId], name: "unique_user_store_review_unlock")
+
+  // 성능 최적화를 위한 인덱스
+  @@index([userId], name: "idx_unlocked_store_reviews_user")
+  @@index([storeId], name: "idx_unlocked_store_reviews_store")
+  @@map("user_unlocked_store_reviews")
+}
+
+model Payment {
+  id               String   @id @default(cuid())
+
+  // 주문 정보
+  orderNo          String   @unique // 주문번호 (유니크)
+  productDesc      String            // 상품 설명
+
+  // 결제 금액
+  amount           Int               // 총 결제 금액
+  amountTaxFree    Int               // 비과세 금액
+  amountTaxable    Int?              // 과세 금액
+  amountVat        Int?              // 부가세
+  amountServiceFee Int?              // 봉사료
+
+  // 결제 설정
+  enablePayMethods       String?  // 결제수단 제한 (TOSS_MONEY, CARD)
+  cashReceipt            Boolean  @default(false)
+  cashReceiptTradeOption String?  // GENERAL, CULTURE, PUBLIC_TP
+  installment            String?  // USE, NOT_USE
+
+  // 토스페이 응답 정보
+  payToken String? // 토스페이에서 반환한 결제 토큰
+
+  // 결제 상태
+  status        String  @default("pending") // pending, completed, failed, cancelled
+  isTestPayment Boolean @default(true)
+
+  // 사용자 연결
+  userId  String
+  user    User   @relation(fields: [userId], references: [id])
+  userKey String // 토스 userKey
+
+  // 에러 정보 (실패 시)
+  errorCode    String?
+  errorMessage String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 성능 최적화를 위한 인덱스
+  @@index([userId], name: "idx_payment_user")
+  @@index([status], name: "idx_payment_status")
+  @@index([orderNo], name: "idx_payment_order")
+  @@index([createdAt], name: "idx_payment_created")
+  @@map("payments")
 }

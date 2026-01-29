@@ -7,6 +7,9 @@ const router = express.Router();
 /**
  * GET /api/reviews/store/:storeId
  * 특정 매장의 리뷰 목록 조회
+ * - 로그인하지 않은 사용자: 최신 1개만 표시, 나머지는 블라인드
+ * - 로그인한 사용자 (해금 전): 최신 1개만 표시, 나머지는 블라인드
+ * - 로그인한 사용자 (해금 후): 모든 리뷰 표시
  */
 router.get('/store/:storeId', optionalAuth, async (req, res) => {
   try {
@@ -19,6 +22,20 @@ router.get('/store/:storeId', optionalAuth, async (req, res) => {
       orderBy = { rating: 'desc' };
     } else if (sortBy === 'rating_low') {
       orderBy = { rating: 'asc' };
+    }
+
+    // 해금 여부 확인
+    let isUnlocked = false;
+    if (req.user) {
+      const unlockRecord = await prisma.userUnlockedStoreReview.findUnique({
+        where: {
+          unique_user_store_review_unlock: {
+            userId: req.user.id,
+            storeId: parseInt(storeId)
+          }
+        }
+      });
+      isUnlocked = !!unlockRecord;
     }
 
     const reviews = await prisma.review.findMany({
@@ -45,25 +62,44 @@ router.get('/store/:storeId', optionalAuth, async (req, res) => {
       }
     });
 
-    const formattedReviews = reviews.map(review => ({
-      id: review.id,
-      rating: review.rating,
-      content: review.content,
-      images: review.images,
-      tags: review.tags,
-      dollCount: review.dollCount,
-      spentAmount: review.spentAmount,
-      dollImages: review.dollImages,
-      userName: review.user ? review.user.nickname : review.userName,
-      userAvatar: review.user?.avatar,
-      isOwner: req.user && review.userId === req.user.id,
-      createdAt: review.createdAt,
-      updatedAt: review.updatedAt
-    }));
+    // 리뷰 포맷팅 (해금 여부에 따라 블라인드 처리)
+    const formattedReviews = reviews.map((review, index) => {
+      const baseReview = {
+        id: review.id,
+        rating: review.rating,
+        content: review.content,
+        images: review.images,
+        tags: review.tags,
+        dollCount: review.dollCount,
+        spentAmount: review.spentAmount,
+        dollImages: review.dollImages,
+        userName: review.user ? review.user.nickname : review.userName,
+        userAvatar: review.user?.avatar,
+        isOwner: req.user && review.userId === req.user.id,
+        createdAt: review.createdAt,
+        updatedAt: review.updatedAt,
+        isBlinded: false
+      };
+
+      // 해금되지 않은 경우: 첫 번째 리뷰만 표시, 나머지는 블라인드
+      if (!isUnlocked && index > 0) {
+        return {
+          ...baseReview,
+          content: '광고를 시청하면 후기를 볼 수 있어요',
+          images: [],
+          tags: [],
+          dollImages: [],
+          isBlinded: true
+        };
+      }
+
+      return baseReview;
+    });
 
     res.json({
       success: true,
       data: formattedReviews,
+      isUnlocked, // 해금 여부 전달
       pagination: {
         total: totalCount,
         limit: parseInt(limit),
@@ -440,6 +476,116 @@ router.post('/v2', optionalAuth, async (req, res) => {
 });
 
 /**
+ * GET /api/reviews/top-catchers
+ * 인형을 가장 많이 뽑은 상위 3명의 유저 조회
+ * 각 유저별 총 뽑은 인형 개수와 총 사용 금액을 집계
+ * 3명 미만일 경우 랜덤 유저로 채움
+ */
+router.get('/top-catchers', async (req, res) => {
+  try {
+    // 유저별 dollCount 합계로 그룹핑하여 상위 유저 조회 (인형을 뽑은 유저)
+    const topCatchers = await prisma.$queryRaw`
+      SELECT
+        r."userId",
+        u.phone,
+        u.nickname,
+        SUM(r."dollCount") as "totalDollCount",
+        SUM(r."spentAmount") as "totalSpentAmount"
+      FROM reviews r
+      INNER JOIN users u ON r."userId" = u.id
+      WHERE r."userId" IS NOT NULL
+        AND r."dollCount" > 0
+        AND u.phone IS NOT NULL
+      GROUP BY r."userId", u.phone, u.nickname
+      ORDER BY "totalDollCount" DESC
+      LIMIT 3
+    `;
+
+    // 3명 미만일 경우 랜덤 유저로 채우기
+    let allCatchers = [...topCatchers];
+
+    if (allCatchers.length < 3) {
+      const needed = 3 - allCatchers.length;
+      const existingUserIds = allCatchers.map(c => c.userId);
+
+      // 리뷰를 작성한 유저 중 아직 선택되지 않은 유저를 랜덤으로 가져오기
+      let additionalUsers;
+      if (existingUserIds.length > 0) {
+        // 문자열 ID를 SQL에 안전하게 삽입하기 위해 따옴표로 감싸기
+        const excludeIds = existingUserIds.map(id => `'${id}'`).join(',');
+        additionalUsers = await prisma.$queryRawUnsafe(`
+          SELECT
+            r."userId",
+            u.phone,
+            u.nickname,
+            COALESCE(SUM(r."dollCount"), 0) as "totalDollCount",
+            COALESCE(SUM(r."spentAmount"), 0) as "totalSpentAmount"
+          FROM reviews r
+          INNER JOIN users u ON r."userId" = u.id
+          WHERE r."userId" IS NOT NULL
+            AND u.phone IS NOT NULL
+            AND r."userId" NOT IN (${excludeIds})
+          GROUP BY r."userId", u.phone, u.nickname
+          ORDER BY RANDOM()
+          LIMIT ${needed}
+        `);
+      } else {
+        additionalUsers = await prisma.$queryRaw`
+          SELECT
+            r."userId",
+            u.phone,
+            u.nickname,
+            COALESCE(SUM(r."dollCount"), 0) as "totalDollCount",
+            COALESCE(SUM(r."spentAmount"), 0) as "totalSpentAmount"
+          FROM reviews r
+          INNER JOIN users u ON r."userId" = u.id
+          WHERE r."userId" IS NOT NULL
+            AND u.phone IS NOT NULL
+          GROUP BY r."userId", u.phone, u.nickname
+          ORDER BY RANDOM()
+          LIMIT ${needed}
+        `;
+      }
+
+      allCatchers = [...allCatchers, ...additionalUsers];
+    }
+
+    // 전화번호 마스킹 처리 (뒷자리 4자리 중 앞 2자리만 표시, 뒤 2자리는 **)
+    const formattedCatchers = allCatchers.map((catcher, index) => {
+      let maskedPhone = '****';
+      if (catcher.phone) {
+        // 전화번호에서 마지막 4자리 추출
+        const phoneDigits = catcher.phone.replace(/[^0-9]/g, '');
+        if (phoneDigits.length >= 4) {
+          const lastFour = phoneDigits.slice(-4);
+          maskedPhone = lastFour.slice(0, 2) + '**';
+        }
+      }
+
+      return {
+        rank: index + 1,
+        maskedPhone,
+        nickname: catcher.nickname || '익명',
+        totalDollCount: Number(catcher.totalDollCount || 0),
+        totalSpentAmount: Number(catcher.totalSpentAmount || 0)
+      };
+    });
+
+    res.json({
+      success: true,
+      data: formattedCatchers
+    });
+
+  } catch (error) {
+    console.error('상위 유저 조회 오류:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: '상위 유저 정보를 불러오는 중 오류가 발생했습니다.'
+    });
+  }
+});
+
+/**
  * GET /api/reviews/stats/:storeId
  * 매장 리뷰 통계 조회
  */
@@ -495,6 +641,109 @@ router.get('/stats/:storeId', async (req, res) => {
     res.status(500).json({
       error: 'Internal Server Error',
       message: '리뷰 통계를 불러오는 중 오류가 발생했습니다.'
+    });
+  }
+});
+
+/**
+ * GET /api/reviews/unlock-status/:storeId
+ * 매장 리뷰 해금 상태 확인
+ */
+router.get('/unlock-status/:storeId', authenticateToken, async (req, res) => {
+  try {
+    const { storeId } = req.params;
+    const userId = req.user.id;
+
+    const unlockRecord = await prisma.userUnlockedStoreReview.findUnique({
+      where: {
+        unique_user_store_review_unlock: {
+          userId,
+          storeId: parseInt(storeId)
+        }
+      }
+    });
+
+    res.json({
+      success: true,
+      data: {
+        isUnlocked: !!unlockRecord,
+        unlockedAt: unlockRecord?.unlockedAt || null
+      }
+    });
+
+  } catch (error) {
+    console.error('리뷰 해금 상태 확인 오류:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: '리뷰 해금 상태를 확인하는 중 오류가 발생했습니다.'
+    });
+  }
+});
+
+/**
+ * POST /api/reviews/unlock/:storeId
+ * 매장 리뷰 해금 (광고 시청 보상)
+ */
+router.post('/unlock/:storeId', authenticateToken, async (req, res) => {
+  try {
+    const { storeId } = req.params;
+    const userId = req.user.id;
+
+    // 매장 존재 여부 확인
+    const store = await prisma.gameBusiness.findUnique({
+      where: { id: parseInt(storeId) }
+    });
+
+    if (!store) {
+      return res.status(404).json({
+        success: false,
+        message: '매장을 찾을 수 없습니다.'
+      });
+    }
+
+    // 이미 해금되었는지 확인
+    const existingUnlock = await prisma.userUnlockedStoreReview.findUnique({
+      where: {
+        unique_user_store_review_unlock: {
+          userId,
+          storeId: parseInt(storeId)
+        }
+      }
+    });
+
+    if (existingUnlock) {
+      return res.json({
+        success: true,
+        message: '이미 해금된 매장입니다.',
+        data: {
+          isUnlocked: true,
+          unlockedAt: existingUnlock.unlockedAt
+        }
+      });
+    }
+
+    // 새로운 해금 레코드 생성
+    const unlock = await prisma.userUnlockedStoreReview.create({
+      data: {
+        userId,
+        storeId: parseInt(storeId)
+      }
+    });
+
+    res.json({
+      success: true,
+      message: '매장 리뷰가 해금되었습니다.',
+      data: {
+        isUnlocked: true,
+        unlockedAt: unlock.unlockedAt
+      }
+    });
+
+  } catch (error) {
+    console.error('리뷰 해금 오류:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: '리뷰 해금 중 오류가 발생했습니다.'
     });
   }
 });
