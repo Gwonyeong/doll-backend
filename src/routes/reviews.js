@@ -375,11 +375,11 @@ router.post('/v2', optionalAuth, async (req, res) => {
       });
     }
 
-    // 인형 수 검증 (0-4개)
-    if (dollCount < 0 || dollCount > 4) {
+    // 인형 수 검증 (음수 방지)
+    if (dollCount < 0) {
       return res.status(400).json({
         error: 'Bad Request',
-        message: '인형 수는 0~4개 사이여야 합니다.'
+        message: '인형 수는 0개 이상이어야 합니다.'
       });
     }
 
