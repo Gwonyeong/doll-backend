@@ -484,68 +484,86 @@ router.post('/v2', optionalAuth, async (req, res) => {
 router.get('/top-catchers', async (req, res) => {
   try {
     // 유저별 dollCount 합계로 그룹핑하여 상위 유저 조회 (인형을 뽑은 유저)
-    const topCatchers = await prisma.$queryRaw`
-      SELECT
-        r."userId",
-        u.phone,
-        u.nickname,
-        SUM(r."dollCount") as "totalDollCount",
-        SUM(r."spentAmount") as "totalSpentAmount"
-      FROM reviews r
-      INNER JOIN users u ON r."userId" = u.id
-      WHERE r."userId" IS NOT NULL
-        AND r."dollCount" > 0
-        AND u.phone IS NOT NULL
-      GROUP BY r."userId", u.phone, u.nickname
-      ORDER BY "totalDollCount" DESC
-      LIMIT 3
-    `;
+    // Prisma groupBy로 집계 후 유저 정보 조회
+    const topCatcherAggregates = await prisma.review.groupBy({
+      by: ['userId'],
+      where: {
+        userId: { not: null },
+        dollCount: { gt: 0 },
+        user: { phone: { not: null } }
+      },
+      _sum: {
+        dollCount: true,
+        spentAmount: true
+      },
+      orderBy: {
+        _sum: { dollCount: 'desc' }
+      },
+      take: 3
+    });
+
+    // 유저 정보 조회
+    const topUserIds = topCatcherAggregates.map(a => a.userId).filter(Boolean);
+    const topUsers = await prisma.user.findMany({
+      where: { id: { in: topUserIds } },
+      select: { id: true, phone: true, nickname: true }
+    });
+
+    // 집계 결과와 유저 정보 결합
+    const topCatchers = topCatcherAggregates.map(agg => {
+      const user = topUsers.find(u => u.id === agg.userId);
+      return {
+        userId: agg.userId,
+        phone: user?.phone || null,
+        nickname: user?.nickname || null,
+        totalDollCount: agg._sum.dollCount || 0,
+        totalSpentAmount: agg._sum.spentAmount || 0
+      };
+    });
 
     // 3명 미만일 경우 랜덤 유저로 채우기
     let allCatchers = [...topCatchers];
 
     if (allCatchers.length < 3) {
       const needed = 3 - allCatchers.length;
-      const existingUserIds = allCatchers.map(c => c.userId);
+      const existingUserIds = allCatchers.map(c => c.userId).filter(Boolean);
 
       // 리뷰를 작성한 유저 중 아직 선택되지 않은 유저를 랜덤으로 가져오기
-      let additionalUsers;
-      if (existingUserIds.length > 0) {
-        // 문자열 ID를 SQL에 안전하게 삽입하기 위해 따옴표로 감싸기
-        const excludeIds = existingUserIds.map(id => `'${id}'`).join(',');
-        additionalUsers = await prisma.$queryRawUnsafe(`
-          SELECT
-            r."userId",
-            u.phone,
-            u.nickname,
-            COALESCE(SUM(r."dollCount"), 0) as "totalDollCount",
-            COALESCE(SUM(r."spentAmount"), 0) as "totalSpentAmount"
-          FROM reviews r
-          INNER JOIN users u ON r."userId" = u.id
-          WHERE r."userId" IS NOT NULL
-            AND u.phone IS NOT NULL
-            AND r."userId" NOT IN (${excludeIds})
-          GROUP BY r."userId", u.phone, u.nickname
-          ORDER BY RANDOM()
-          LIMIT ${needed}
-        `);
-      } else {
-        additionalUsers = await prisma.$queryRaw`
-          SELECT
-            r."userId",
-            u.phone,
-            u.nickname,
-            COALESCE(SUM(r."dollCount"), 0) as "totalDollCount",
-            COALESCE(SUM(r."spentAmount"), 0) as "totalSpentAmount"
-          FROM reviews r
-          INNER JOIN users u ON r."userId" = u.id
-          WHERE r."userId" IS NOT NULL
-            AND u.phone IS NOT NULL
-          GROUP BY r."userId", u.phone, u.nickname
-          ORDER BY RANDOM()
-          LIMIT ${needed}
-        `;
-      }
+      const additionalAggregates = await prisma.review.groupBy({
+        by: ['userId'],
+        where: {
+          userId: { not: null, notIn: existingUserIds.length > 0 ? existingUserIds : undefined },
+          user: { phone: { not: null } }
+        },
+        _sum: {
+          dollCount: true,
+          spentAmount: true
+        }
+      });
+
+      // 유저 정보 조회
+      const additionalUserIds = additionalAggregates.map(a => a.userId).filter(Boolean);
+      const additionalUsersData = await prisma.user.findMany({
+        where: { id: { in: additionalUserIds } },
+        select: { id: true, phone: true, nickname: true }
+      });
+
+      // 집계 결과와 유저 정보 결합
+      let additionalUsers = additionalAggregates.map(agg => {
+        const user = additionalUsersData.find(u => u.id === agg.userId);
+        return {
+          userId: agg.userId,
+          phone: user?.phone || null,
+          nickname: user?.nickname || null,
+          totalDollCount: agg._sum.dollCount || 0,
+          totalSpentAmount: agg._sum.spentAmount || 0
+        };
+      });
+
+      // 랜덤 셔플 후 필요한 수만큼 가져오기
+      additionalUsers = additionalUsers
+        .sort(() => Math.random() - 0.5)
+        .slice(0, needed);
 
       allCatchers = [...allCatchers, ...additionalUsers];
     }
