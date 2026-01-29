@@ -81,28 +81,33 @@ async function sendDailyReport() {
     // 4. 총 후기 수
     const totalReviews = await prisma.review.count();
 
-    // 5. 처리되지 않은 광고 신청 (pending 상태)
-    const pendingAdRequests = await prisma.adRequest.findMany({
+    // 4-1. 어제 작성된 후기 중 뽑은 인형 갯수 기준 Top 3
+    const yesterdayTopDollReviews = await prisma.review.findMany({
       where: {
-        status: 'pending'
+        createdAt: {
+          gte: yesterday,
+          lt: today
+        },
+        dollCount: {
+          gt: 0
+        }
       },
+      orderBy: {
+        dollCount: 'desc'
+      },
+      take: 3,
       select: {
-        id: true,
-        startDate: true,
-        endDate: true,
-        createdAt: true,
+        dollCount: true,
+        spentAmount: true,
         store: {
           select: {
             사업장명: true
           }
         }
-      },
-      orderBy: {
-        createdAt: 'asc' // 오래된 순서대로
       }
     });
 
-    // 6. 어제 하루 저장된 즐겨찾기 수
+    // 5. 어제 하루 저장된 즐겨찾기 수
     const yesterdayFavorites = await prisma.favorite.count({
       where: {
         createdAt: {
@@ -112,8 +117,21 @@ async function sendDailyReport() {
       }
     });
 
-    // 7. 총 즐겨찾기 수
+    // 6. 총 즐겨찾기 수
     const totalFavorites = await prisma.favorite.count();
+
+    // 7. 어제 하루 광고 시청 횟수
+    const yesterdayAdViews = await prisma.userUnlockedStoreReview.count({
+      where: {
+        unlockedAt: {
+          gte: yesterday,
+          lt: today
+        }
+      }
+    });
+
+    // 8. 총 광고 시청 횟수
+    const totalAdViews = await prisma.userUnlockedStoreReview.count();
 
     // 날짜 포맷 함수
     const formatDate = (date) => {
@@ -177,40 +195,47 @@ async function sendDailyReport() {
               short: true
             }
           ]
+        },
+        {
+          color: "#9c27b0",
+          title: "📺 광고 시청 통계",
+          fields: [
+            {
+              title: "어제 광고 시청",
+              value: `${yesterdayAdViews}회`,
+              short: true
+            },
+            {
+              title: "전체 광고 시청",
+              value: `${totalAdViews.toLocaleString()}회`,
+              short: true
+            }
+          ]
         }
       ]
     };
 
-    // 미처리 광고 신청 추가
-    if (pendingAdRequests.length > 0) {
-      const adRequestsText = pendingAdRequests.slice(0, 5).map((ad, index) => {
-        const storeName = ad.store?.사업장명 || '직접 입력';
-        return `${index + 1}. ${storeName}\n   기간: ${formatDate(ad.startDate)} ~ ${formatDate(ad.endDate)}`;
+    // 어제 인형 뽑기 Top 3 추가
+    if (yesterdayTopDollReviews.length > 0) {
+      const topDollText = yesterdayTopDollReviews.map((review, index) => {
+        const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉';
+        const storeName = review.store?.사업장명 || '알 수 없음';
+        const amount = review.spentAmount.toLocaleString();
+        return `${medal} ${storeName}\n    인형 ${review.dollCount}개 | ${amount}원`;
       }).join('\n\n');
-
-      const additionalText = pendingAdRequests.length > 5
-        ? `\n\n... 외 ${pendingAdRequests.length - 5}건`
-        : '';
 
       message.attachments.push({
         color: "#e91e63",
-        title: `🔔 미처리 광고 신청 (${pendingAdRequests.length}건)`,
-        text: adRequestsText + additionalText
-      });
-    } else {
-      message.attachments.push({
-        color: "good",
-        title: "✅ 광고 신청",
-        text: "처리 대기 중인 광고 신청이 없습니다."
+        title: `🎯 어제의 인형 뽑기 Top 3`,
+        text: topDollText
       });
     }
 
     // 요약 통계 추가
     const summaryText = [
       `📅 집계 날짜: ${formatDate(yesterday)}`,
-      `🆕 어제의 활동: 신규 유저 ${yesterdayNewUsers}명, 리뷰 ${yesterdayReviews}개, 즐겨찾기 ${yesterdayFavorites}개`,
-      pendingAdRequests.length > 0 ? `⚠️ 처리 필요: 광고 신청 ${pendingAdRequests.length}건` : ''
-    ].filter(Boolean).join('\n');
+      `🆕 어제의 활동: 신규 유저 ${yesterdayNewUsers}명, 리뷰 ${yesterdayReviews}개, 즐겨찾기 ${yesterdayFavorites}개, 광고 시청 ${yesterdayAdViews}회`
+    ].join('\n');
 
     message.attachments.push({
       color: "#666666",

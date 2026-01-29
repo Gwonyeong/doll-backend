@@ -347,6 +347,9 @@ router.get('/reviews', async (req, res) => {
       content: review.content,
       images: review.images,
       tags: review.tags,
+      dollCount: review.dollCount,
+      spentAmount: review.spentAmount,
+      dollImages: review.dollImages,
       store: {
         id: review.store.id,
         name: review.store.사업장명,
@@ -904,6 +907,9 @@ router.get('/reviews', async (req, res) => {
       content: review.content,
       images: review.images,
       tags: review.tags,
+      dollCount: review.dollCount,
+      spentAmount: review.spentAmount,
+      dollImages: review.dollImages,
       store: {
         id: review.store?.id,
         name: review.store?.사업장명,
