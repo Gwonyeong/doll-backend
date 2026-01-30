@@ -39,5 +39,11 @@
     "src/app.js": {
       "maxDuration": 30
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/scheduler/cron/daily-report",
+      "schedule": "0 0 * * *"
+    }
+  ]
 }
