@@ -287,6 +287,88 @@ router.get('/stores', async (req, res) => {
 });
 
 /**
+ * GET /api/admin/favorites
+ * 즐겨찾기 목록 (유저 + 매장 정보 포함)
+ */
+router.get('/favorites', async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = req.query;
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    const orderBy = {};
+    orderBy[sortBy] = sortOrder;
+
+    const [favorites, totalCount] = await Promise.all([
+      prisma.favorite.findMany({
+        include: {
+          user: {
+            select: {
+              id: true,
+              nickname: true,
+              email: true,
+              gender: true,
+              birthday: true
+            }
+          },
+          store: {
+            select: {
+              id: true,
+              사업장명: true,
+              소재지전체주소: true
+            }
+          }
+        },
+        orderBy,
+        skip: offset,
+        take: parseInt(limit)
+      }),
+      prisma.favorite.count()
+    ]);
+
+    const formattedFavorites = favorites.map(fav => ({
+      id: fav.id,
+      user: fav.user ? {
+        id: fav.user.id,
+        nickname: fav.user.nickname,
+        email: fav.user.email,
+        gender: fav.user.gender,
+        birthday: fav.user.birthday
+      } : null,
+      store: fav.store ? {
+        id: fav.store.id,
+        name: fav.store.사업장명,
+        address: fav.store.소재지전체주소
+      } : null,
+      createdAt: fav.createdAt,
+      updatedAt: fav.updatedAt
+    }));
+
+    res.json({
+      success: true,
+      data: formattedFavorites,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    console.error('관리자 즐겨찾기 목록 조회 오류:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: '즐겨찾기 목록을 불러오는 중 오류가 발생했습니다.'
+    });
+  }
+});
+
+/**
  * GET /api/admin/reviews/stats
  * 후기 작성자 통계 (성별/나이 - 유저 중복 제거)
  */
