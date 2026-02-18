@@ -5,6 +5,9 @@ const proj4 = require("proj4");
 
 const router = express.Router();
 
+// 가짜 후기 작성자 닉네임 목록 (어드민 리뷰 조회 시 필터링)
+const FAKE_REVIEWER_NICKNAMES = ['인형러버', '뽑기왕', '크레인마스터'];
+
 // EPSG:5174 (Korea 2000 / Central Belt 2010) 좌표계 정의
 const epsg5174 =
   "+proj=tmerc +lat_0=38 +lon_0=127 +k=1 +x_0=200000 +y_0=500000 +ellps=GRS80 +units=m +no_defs";
@@ -284,6 +287,85 @@ router.get('/stores', async (req, res) => {
 });
 
 /**
+ * GET /api/admin/reviews/stats
+ * 후기 작성자 통계 (성별/나이 - 유저 중복 제거)
+ */
+router.get('/reviews/stats', async (req, res) => {
+  try {
+    // 후기를 작성한 유저 목록 (중복 제거, 가짜 작성자 제외)
+    const reviewUsers = await prisma.review.findMany({
+      where: {
+        userId: { not: null },
+        user: {
+          nickname: { notIn: FAKE_REVIEWER_NICKNAMES }
+        }
+      },
+      select: {
+        userId: true,
+        user: {
+          select: {
+            id: true,
+            gender: true,
+            birthday: true
+          }
+        }
+      },
+      distinct: ['userId']
+    });
+
+    const totalUsers = reviewUsers.length;
+
+    // 성별 통계
+    const genderMap = { male: 0, female: 0, unknown: 0 };
+    // 나이대 통계
+    const ageGroupMap = { '10대': 0, '20대': 0, '30대': 0, '40대': 0, '50대 이상': 0, '알 수 없음': 0 };
+
+    const now = new Date();
+
+    for (const r of reviewUsers) {
+      const user = r.user;
+      if (!user) continue;
+
+      // 성별 (토스 API에서 다양한 포맷으로 올 수 있음)
+      const g = (user.gender || '').toLowerCase();
+      if (g === 'male' || g === 'm' || g === '남' || g === '남성') genderMap.male++;
+      else if (g === 'female' || g === 'f' || g === '여' || g === '여성') genderMap.female++;
+      else genderMap.unknown++;
+
+      // 나이 계산 (birthday: "YYYYMMDD" 또는 "YYYY-MM-DD")
+      if (user.birthday) {
+        const cleaned = user.birthday.replace(/-/g, '');
+        const birthYear = parseInt(cleaned.substring(0, 4));
+        const age = now.getFullYear() - birthYear;
+
+        if (age < 20) ageGroupMap['10대']++;
+        else if (age < 30) ageGroupMap['20대']++;
+        else if (age < 40) ageGroupMap['30대']++;
+        else if (age < 50) ageGroupMap['40대']++;
+        else ageGroupMap['50대 이상']++;
+      } else {
+        ageGroupMap['알 수 없음']++;
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        totalUniqueUsers: totalUsers,
+        gender: genderMap,
+        ageGroup: ageGroupMap
+      }
+    });
+  } catch (error) {
+    console.error('리뷰 통계 조회 오류:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: '리뷰 통계를 불러오는 중 오류가 발생했습니다.'
+    });
+  }
+});
+
+/**
  * GET /api/admin/reviews
  * 리뷰 관리 목록
  */
@@ -300,8 +382,12 @@ router.get('/reviews', async (req, res) => {
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    // 검색 조건 구성
-    let whereClause = {};
+    // 검색 조건 구성 (가짜 후기 작성자 제외)
+    let whereClause = {
+      user: {
+        nickname: { notIn: FAKE_REVIEWER_NICKNAMES }
+      }
+    };
 
     if (storeId) {
       whereClause.storeId = parseInt(storeId);
@@ -330,7 +416,9 @@ router.get('/reviews', async (req, res) => {
             select: {
               id: true,
               nickname: true,
-              email: true
+              email: true,
+              gender: true,
+              birthday: true
             }
           }
         },
@@ -358,7 +446,9 @@ router.get('/reviews', async (req, res) => {
       user: review.user ? {
         id: review.user.id,
         nickname: review.user.nickname,
-        email: review.user.email
+        email: review.user.email,
+        gender: review.user.gender,
+        birthday: review.user.birthday
       } : {
         nickname: review.userName
       },
@@ -860,8 +950,12 @@ router.get('/reviews', async (req, res) => {
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    // 검색 조건 구성
-    let whereClause = {};
+    // 검색 조건 구성 (가짜 후기 작성자 제외)
+    let whereClause = {
+      user: {
+        nickname: { notIn: FAKE_REVIEWER_NICKNAMES }
+      }
+    };
 
     if (storeId) {
       whereClause.storeId = parseInt(storeId);
@@ -890,7 +984,9 @@ router.get('/reviews', async (req, res) => {
             select: {
               id: true,
               nickname: true,
-              email: true
+              email: true,
+              gender: true,
+              birthday: true
             }
           }
         },
@@ -918,7 +1014,9 @@ router.get('/reviews', async (req, res) => {
       user: review.user ? {
         id: review.user.id,
         nickname: review.user.nickname,
-        email: review.user.email
+        email: review.user.email,
+        gender: review.user.gender,
+        birthday: review.user.birthday
       } : {
         nickname: review.userName || 'Unknown'
       },
