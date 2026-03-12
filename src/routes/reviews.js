@@ -1,8 +1,37 @@
 const express = require('express');
 const { prisma } = require('../services/prisma');
 const { authenticateToken, optionalAuth } = require('../middleware/auth');
+const proj4 = require('proj4');
 
 const router = express.Router();
+
+// 좌표 변환 (TM → WGS84)
+const epsg5174 =
+  '+proj=tmerc +lat_0=38 +lon_0=127 +k=1 +x_0=200000 +y_0=500000 +ellps=GRS80 +units=m +no_defs';
+const wgs84 = '+proj=longlat +datum=WGS84 +no_defs';
+
+function tmToWgs84(x, y) {
+  try {
+    const tmX = parseFloat(x);
+    const tmY = parseFloat(y);
+    if (!isFinite(tmX) || !isFinite(tmY) || isNaN(tmX) || isNaN(tmY)) {
+      return null;
+    }
+    if (tmX >= 100 && tmX <= 140 && tmY >= 30 && tmY <= 45) {
+      return { lat: tmY, lng: tmX };
+    }
+    if (tmX < 50000 || tmX > 350000 || tmY < 0 || tmY > 700000) {
+      return null;
+    }
+    const [lng, lat] = proj4(epsg5174, wgs84, [tmX, tmY]);
+    return {
+      lat: Math.max(33, Math.min(43, lat + 0.002747)),
+      lng: Math.max(124, Math.min(132, lng + 0.00079)),
+    };
+  } catch (error) {
+    return null;
+  }
+}
 
 /**
  * GET /api/reviews/store/:storeId
@@ -113,6 +142,158 @@ router.get('/store/:storeId', optionalAuth, async (req, res) => {
     res.status(500).json({
       error: 'Internal Server Error',
       message: '리뷰 목록을 불러오는 중 오류가 발생했습니다.'
+    });
+  }
+});
+
+/**
+ * GET /api/reviews/all
+ * 전체 리뷰 목록 조회 (최신순, 매장 정보 포함)
+ */
+router.get('/all', async (req, res) => {
+  try {
+    const { limit = 20, offset = 0 } = req.query;
+
+    const reviews = await prisma.review.findMany({
+      include: {
+        user: {
+          select: {
+            id: true,
+            nickname: true,
+            avatar: true
+          }
+        },
+        store: {
+          select: {
+            id: true,
+            사업장명: true,
+            도로명전체주소: true,
+            좌표정보x: true,
+            좌표정보y: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      skip: parseInt(offset),
+      take: parseInt(limit)
+    });
+
+    const totalCount = await prisma.review.count();
+
+    const formattedReviews = reviews.map(review => ({
+      id: review.id,
+      rating: review.rating,
+      content: review.content,
+      images: review.images,
+      tags: review.tags,
+      dollCount: review.dollCount,
+      spentAmount: review.spentAmount,
+      dollImages: review.dollImages,
+      userName: review.user ? review.user.nickname : review.userName,
+      userAvatar: review.user?.avatar,
+      storeName: review.store?.사업장명,
+      storeId: review.storeId,
+      storeAddress: review.store?.도로명전체주소,
+      storeCoords: review.store?.좌표정보x && review.store?.좌표정보y
+        ? tmToWgs84(review.store.좌표정보x, review.store.좌표정보y)
+        : null,
+      createdAt: review.createdAt,
+      updatedAt: review.updatedAt
+    }));
+
+    res.json({
+      success: true,
+      data: formattedReviews,
+      pagination: {
+        total: totalCount,
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        hasMore: parseInt(offset) + parseInt(limit) < totalCount
+      }
+    });
+  } catch (error) {
+    console.error('전체 리뷰 목록 조회 오류:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: '리뷰 목록을 불러오는 중 오류가 발생했습니다.'
+    });
+  }
+});
+
+/**
+ * GET /api/reviews/my
+ * 내가 작성한 리뷰 목록 조회
+ */
+router.get('/my', authenticateToken, async (req, res) => {
+  try {
+    const { limit = 20, offset = 0 } = req.query;
+    const userId = req.user.id;
+
+    const reviews = await prisma.review.findMany({
+      where: { userId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            nickname: true,
+            avatar: true
+          }
+        },
+        store: {
+          select: {
+            id: true,
+            사업장명: true,
+            도로명전체주소: true,
+            좌표정보x: true,
+            좌표정보y: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      skip: parseInt(offset),
+      take: parseInt(limit)
+    });
+
+    const totalCount = await prisma.review.count({
+      where: { userId }
+    });
+
+    const formattedReviews = reviews.map(review => ({
+      id: review.id,
+      rating: review.rating,
+      content: review.content,
+      images: review.images,
+      tags: review.tags,
+      dollCount: review.dollCount,
+      spentAmount: review.spentAmount,
+      dollImages: review.dollImages,
+      userName: review.user ? review.user.nickname : review.userName,
+      userAvatar: review.user?.avatar,
+      storeName: review.store?.사업장명,
+      storeId: review.storeId,
+      storeAddress: review.store?.도로명전체주소,
+      storeCoords: review.store?.좌표정보x && review.store?.좌표정보y
+        ? tmToWgs84(review.store.좌표정보x, review.store.좌표정보y)
+        : null,
+      createdAt: review.createdAt,
+      updatedAt: review.updatedAt
+    }));
+
+    res.json({
+      success: true,
+      data: formattedReviews,
+      pagination: {
+        total: totalCount,
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        hasMore: parseInt(offset) + parseInt(limit) < totalCount
+      }
+    });
+  } catch (error) {
+    console.error('내 리뷰 목록 조회 오류:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: '내 리뷰 목록을 불러오는 중 오류가 발생했습니다.'
     });
   }
 });

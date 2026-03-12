@@ -12,6 +12,8 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
+    "db:update-csv": "node scripts/update_from_csv.js",
+    "db:generate-reviews": "node scripts/generate_reviews.js",
     "vercel-build": "prisma generate",
     "deploy:dev": "vercel | tail -1 | xargs -I {} vercel alias {} doll-backend-dev.vercel.app",
     "deploy:prod": "vercel --prod",
